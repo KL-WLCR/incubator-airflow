@@ -96,7 +96,12 @@ class BaseJob(Base, LoggingMixin):
             executor=executors.GetDefaultExecutor(),
             heartrate=conf.getfloat('scheduler', 'JOB_HEARTBEAT_SEC'),
             *args, **kwargs):
-        self.hostname = socket.getfqdn()
+
+        try:
+            self.hostname = conf.get("core", "ADVERTISED_HOST")
+        except AirflowException:
+            self.hostname = socket.getfqdn()
+
         self.executor = executor
         self.executor_class = executor.__class__.__name__
         self.start_date = datetime.utcnow()
@@ -2563,7 +2568,7 @@ class LocalTaskJob(BaseJob):
         self.task_instance.refresh_from_db()
         ti = self.task_instance
 
-        fqdn = socket.getfqdn()
+        fqdn = self.hostname
         same_hostname = fqdn == ti.hostname
         same_process = ti.pid == os.getpid()
 
