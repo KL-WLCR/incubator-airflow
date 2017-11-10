@@ -1458,7 +1458,10 @@ class TaskInstance(Base, LoggingMixin):
         self.test_mode = test_mode
         self.refresh_from_db(session=session)
         self.job_id = job_id
-        self.hostname = configuration.get('core', 'advertised_host') or socket.getfqdn()
+        try:
+            self.hostname = configuration.get('core', 'advertised_host')
+        except:
+            self.hostname = socket.getfqdn()
         self.operator = task.__class__.__name__
 
         context = {}
