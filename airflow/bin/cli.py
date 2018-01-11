@@ -934,6 +934,44 @@ alternative_conn_specs = ['conn_type', 'conn_host',
 
 
 def connections(args):
+    def check_args():
+        # Check that the conn_id and conn_uri args were passed to the command:
+        missing_args = list()
+        invalid_args = list()
+        if not args.conn_id:
+            missing_args.append('conn_id')
+        if args.conn_uri:
+            for arg in alternative_conn_specs:
+                if getattr(args, arg) is not None:
+                    invalid_args.append(arg)
+        elif not args.conn_type:
+            missing_args.append('conn_uri or conn_type')
+        if missing_args:
+            msg = ('\n\tThe following args are required to add a connection:' +
+                   ' {missing!r}\n'.format(missing=missing_args))
+            print(msg)
+        if invalid_args:
+            msg = ('\n\tThe following args are not compatible with the ' +
+                   '--add flag and --conn_uri flag: {invalid!r}\n')
+            msg = msg.format(invalid=invalid_args)
+            print(msg)
+        if missing_args or invalid_args:
+            return False
+        else:
+            return True
+    def is_connection_equals(first, second):
+
+        if (first.conn_id == second.conn_id and
+            first.conn_type == second.conn_type and
+            first.host == second.host and
+            first.login == second.login and
+            first.password == second.password and
+            first.schema == second.schema and
+            int(first.port) == int(second.port) and
+            first.extra == second.extra):
+            return True
+        else:
+            return False
     if args.list:
         # Check that no other flags were passed to the command
         invalid_args = list()
@@ -1002,29 +1040,37 @@ def connections(args):
             msg = msg.format(conn_id=deleted_conn_id)
             print(msg)
         return
+    if args.upsert:
+        if not check_args():
+            return
+
+        if args.conn_uri:
+            new_conn = Connection(conn_id=args.conn_id, uri=args.conn_uri)
+        else:
+            new_conn = Connection(conn_id=args.conn_id, conn_type=args.conn_type, host=args.conn_host,
+                              login=args.conn_login, password=args.conn_password, schema=args.conn_schema, port=args.conn_port)
+        if args.conn_extra is not None:
+            new_conn.set_extra(args.conn_extra)
+        session = settings.Session()
+        conn = session.query(Connection).filter(Connection.conn_id == new_conn.conn_id).first()
+
+        if not (conn):
+            session.add(new_conn)
+            session.commit()
+            msg = '\n\tConnection `conn_id`={conn_id} : {uri} successfully added \n'
+            msg = msg.format(conn_id=new_conn.conn_id, uri=args.conn_uri or urlunparse((args.conn_type, '{login}:{password}@{host}:{port}'.format(
+            login=args.conn_login or '', password=args.conn_password or '', host=args.conn_host or '', port=args.conn_port or ''), args.conn_schema or '', '', '', '')))
+            print(msg)
+        elif is_connection_equals(conn, new_conn):
+            print("\n\tConnection `conn_id`=%s hasn't been changed\n" % new_conn.conn_id)
+        else:
+            session.delete(conn)
+            session.add(new_conn)
+            session.commit()
+            print("\n\tConnection `conn_id`=%s has been changed\n" % new_conn.conn_id)
 
     if args.add:
-        # Check that the conn_id and conn_uri args were passed to the command:
-        missing_args = list()
-        invalid_args = list()
-        if not args.conn_id:
-            missing_args.append('conn_id')
-        if args.conn_uri:
-            for arg in alternative_conn_specs:
-                if getattr(args, arg) is not None:
-                    invalid_args.append(arg)
-        elif not args.conn_type:
-            missing_args.append('conn_uri or conn_type')
-        if missing_args:
-            msg = ('\n\tThe following args are required to add a connection:' +
-                   ' {missing!r}\n'.format(missing=missing_args))
-            print(msg)
-        if invalid_args:
-            msg = ('\n\tThe following args are not compatible with the ' +
-                   '--add flag and --conn_uri flag: {invalid!r}\n')
-            msg = msg.format(invalid=invalid_args)
-            print(msg)
-        if missing_args or invalid_args:
+        if not check_args():
             return
 
         if args.conn_uri:
@@ -1433,6 +1479,11 @@ class CLIFactory(object):
             ('-d', '--delete'),
             help='Delete a connection',
             action='store_true'),
+        'upsert_connection': Arg(
+            ('-u', '--upsert'),
+            help='Update connection',
+            action='store_true'
+        ),
         'conn_id': Arg(
             ('--conn_id',),
             help='Connection id, required to add/delete a connection',
@@ -1600,7 +1651,7 @@ class CLIFactory(object):
         }, {
             'func': connections,
             'help': "List/Add/Delete connections",
-            'args': ('list_connections', 'add_connection', 'delete_connection',
+            'args': ('list_connections', 'add_connection', 'delete_connection', 'upsert_connection',
                      'conn_id', 'conn_uri', 'conn_extra') + tuple(alternative_conn_specs),
         },
     )
